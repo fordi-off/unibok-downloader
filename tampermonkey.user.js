@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Unibok Book Downloader
 // @namespace    https://github.com/fordi-off/unibok-downloader
-// @version      2.0
+// @version      4.0
 // @description  Download offline books from unibok.no as readable HTML files
 // @author       fordi-off
 // @match        https://les.unibok.no/*

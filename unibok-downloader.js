@@ -1,11 +1,19 @@
 // unibok-downloader.js
-// Hosted on GitHub — loaded by Tampermonkey via @require
-// Version with offline images and stylesheet support
-(function () {
-  'use strict';
+// Version: Reader export + AI export
 
-  // ── UI styles ───────────────────────────────────────────────────────────
-  const style = document.createElement('style');
+(function () {
+  "use strict";
+
+  const MODES = {
+    AI: "ai",
+    READER: "reader",
+  };
+
+  // ─────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────
+
+  const style = document.createElement("style");
   style.textContent = `
     #ub-btn {
       position: fixed;
@@ -13,557 +21,969 @@
       right: 24px;
       z-index: 999999;
       background: #2e7d32;
-      color: #fff;
+      color: white;
       border: none;
       border-radius: 8px;
       padding: 12px 20px;
       font-size: 15px;
       font-weight: bold;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 12px rgba(0,0,0,.3);
       font-family: sans-serif;
-      transition: background 0.2s;
     }
-    #ub-btn:hover { background: #1b5e20; }
-    #ub-btn:disabled { background: #555; cursor: default; }
+
     #ub-overlay {
       display: none;
       position: fixed;
       inset: 0;
       z-index: 9999998;
-      background: rgba(0,0,0,0.55);
+      background: rgba(0,0,0,.55);
       align-items: center;
       justify-content: center;
     }
-    #ub-overlay.open { display: flex; }
+
+    #ub-overlay.open {
+      display: flex;
+    }
+
     #ub-modal {
-      background: #fff;
+      background: white;
       border-radius: 12px;
       padding: 28px;
-      max-width: 520px;
-      width: 90%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      font-family: sans-serif;
-      max-height: 80vh;
+      width: 92%;
+      max-width: 720px;
+      max-height: 84vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
+      font-family: sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,.3);
     }
-    #ub-modal h2 { margin: 0 0 6px; color: #2e7d32; font-size: 18px; }
-    #ub-modal p { margin: 0 0 16px; color: #666; font-size: 13px; }
-    #ub-list { overflow-y: auto; flex: 1; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 16px; }
-    .ub-book-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.15s; }
-    .ub-book-item:last-child { border-bottom: none; }
-    .ub-book-item:hover { background: #f1f8e9; }
-    .ub-book-name { font-weight: bold; font-size: 14px; color: #222; }
-    .ub-book-meta { font-size: 12px; color: #888; margin-top: 2px; }
-    .ub-dl-btn { background: #2e7d32; color: #fff; border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; margin-left: 12px; flex-shrink: 0; }
-    .ub-dl-btn:hover { background: #1b5e20; }
-    .ub-dl-btn:disabled { background: #aaa; cursor: default; }
-    #ub-close { background: #eee; border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; cursor: pointer; align-self: flex-end; }
-    #ub-close:hover { background: #ddd; }
-    #ub-scanning { padding: 20px; text-align: center; color: #666; font-size: 14px; }
+
+    #ub-modal h2 {
+      margin: 0 0 6px;
+      color: #2e7d32;
+      font-size: 19px;
+    }
+
+    #ub-modal p {
+      margin: 0 0 16px;
+      color: #666;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    #ub-list {
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .ub-book {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .ub-book:last-child {
+      border-bottom: none;
+    }
+
+    .ub-book:hover {
+      background: #f1f8e9;
+    }
+
+    .ub-title {
+      font-weight: bold;
+      font-size: 14px;
+      color: #222;
+    }
+
+    .ub-meta {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .ub-dl {
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .ub-dl.ai {
+      background: #1565c0;
+    }
+
+    .ub-dl.reader {
+      background: #2e7d32;
+    }
+
+    .ub-dl:disabled {
+      background: #aaa !important;
+      cursor: default;
+    }
+
+    #ub-close {
+      align-self: flex-end;
+      background: #eee;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 18px;
+      cursor: pointer;
+    }
+
+    #ub-empty {
+      padding: 20px;
+      color: #666;
+      text-align: center;
+      font-size: 14px;
+    }
   `;
   document.head.appendChild(style);
 
-  // ── UI structure ────────────────────────────────────────────────────────
-  const overlay = document.createElement('div');
-  overlay.id = 'ub-overlay';
+  const overlay = document.createElement("div");
+  overlay.id = "ub-overlay";
   overlay.innerHTML = `
     <div id="ub-modal">
-      <h2>Available Books</h2>
-      <p>Only books downloaded for offline use are shown here.</p>
-      <div id="ub-list"><div id="ub-scanning">⏳ Scanning storage...</div></div>
+      <h2>Available books</h2>
+      <p>
+        <b>AI version</b> = ren tekst/HTML for ChatGPT.
+        <br>
+        <b>Reader version</b> = prøver å beholde bilder og styling.
+      </p>
+      <div id="ub-list">
+        <div id="ub-empty">Scanning storage...</div>
+      </div>
       <button id="ub-close">Close</button>
     </div>
   `;
   document.body.appendChild(overlay);
 
-  const btn = document.createElement('button');
-  btn.id = 'ub-btn';
-  btn.textContent = 'Download Book';
-  document.body.appendChild(btn);
+  const mainButton = document.createElement("button");
+  mainButton.id = "ub-btn";
+  mainButton.textContent = "Download Book";
+  document.body.appendChild(mainButton);
 
-  btn.onclick = () => openModal();
-  document.getElementById('ub-close').onclick = () => overlay.classList.remove('open');
-  overlay.onclick = e => {
-    if (e.target === overlay) overlay.classList.remove('open');
+  mainButton.onclick = openModal;
+  document.getElementById("ub-close").onclick = () => overlay.classList.remove("open");
+
+  overlay.onclick = (e) => {
+    if (e.target === overlay) overlay.classList.remove("open");
   };
 
-  // ── Scan available books ────────────────────────────────────────────────
   async function openModal() {
-    overlay.classList.add('open');
-    const list = document.getElementById('ub-list');
-    list.innerHTML = '<div id="ub-scanning">⏳ Scanning storage...</div>';
+    overlay.classList.add("open");
 
-    const books = await findAvailableBooks();
-    list.innerHTML = '';
+    const list = document.getElementById("ub-list");
+    list.innerHTML = `<div id="ub-empty">Scanning storage...</div>`;
+
+    const books = await findBooks();
 
     if (!books.length) {
-      list.innerHTML = '<div id="ub-scanning">No books found. Download a book for offline use first.</div>';
+      list.innerHTML = `<div id="ub-empty">No offline books found. Download the book for offline use in Unibok first.</div>`;
       return;
     }
 
+    list.innerHTML = "";
+
     for (const book of books) {
-      const item = document.createElement('div');
-      item.className = 'ub-book-item';
-      item.innerHTML = `
+      const row = document.createElement("div");
+      row.className = "ub-book";
+
+      row.innerHTML = `
         <div>
-          <div class="ub-book-name"></div>
-          <div class="ub-book-meta"></div>
+          <div class="ub-title"></div>
+          <div class="ub-meta"></div>
         </div>
-        <button class="ub-dl-btn">⬇ Download</button>
+        <button class="ub-dl ai">AI version</button>
+        <button class="ub-dl reader">Reader version</button>
       `;
-      item.querySelector('.ub-book-name').textContent = book.title || book.id;
-      item.querySelector('.ub-book-meta').textContent = `${book.id} · ${book.count} files`;
-      item.querySelector('.ub-dl-btn').onclick = (e) => {
+
+      row.querySelector(".ub-title").textContent = book.title || book.id;
+      row.querySelector(".ub-meta").textContent = `${book.id} · ${book.count} files`;
+
+      row.querySelector(".ai").onclick = (e) => {
         e.stopPropagation();
-        downloadBook(book, item.querySelector('.ub-dl-btn'));
+        downloadBook(book, e.target, MODES.AI);
       };
-      list.appendChild(item);
+
+      row.querySelector(".reader").onclick = (e) => {
+        e.stopPropagation();
+        downloadBook(book, e.target, MODES.READER);
+      };
+
+      list.appendChild(row);
     }
   }
 
-  async function findAvailableBooks() {
-    const allDbs = await indexedDB.databases();
+  // ─────────────────────────────────────────────
+  // Find books in IndexedDB
+  // ─────────────────────────────────────────────
+
+  async function findBooks() {
+    const databases = await indexedDB.databases();
     const books = [];
 
-    for (const dbInfo of allDbs) {
-      if (!dbInfo.name?.startsWith('bookId_')) continue;
+    for (const dbInfo of databases) {
+      if (!dbInfo.name || !dbInfo.name.startsWith("bookId_")) continue;
+
       try {
         const db = await openDb(dbInfo.name);
-        const storeNames = Array.from(db.objectStoreNames);
-        if (!storeNames.includes('keyvaluepairs')) {
+
+        if (!Array.from(db.objectStoreNames).includes("keyvaluepairs")) {
           db.close();
           continue;
         }
 
-        const count = await countRecords(db, 'keyvaluepairs');
-        if (count === 0) {
+        const count = await countRecords(db, "keyvaluepairs");
+
+        if (!count) {
           db.close();
           continue;
         }
 
         const title = await getBookTitle(db);
+
         db.close();
 
         books.push({
-          id: dbInfo.name.replace('bookId_', ''),
+          id: dbInfo.name.replace("bookId_", ""),
           dbName: dbInfo.name,
           count,
           title,
         });
       } catch (err) {
-        console.warn('[Unibok DL] Skipping DB', dbInfo.name, err);
+        console.warn("[Unibok downloader] Could not read DB:", dbInfo.name, err);
       }
     }
 
-    return books.sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
-  }
-
-  async function getBookTitle(db) {
-    return new Promise(res => {
-      const req = db.transaction('keyvaluepairs', 'readonly').objectStore('keyvaluepairs').openCursor();
-      req.onsuccess = async e => {
-        const c = e.target.result;
-        if (!c) return res(null);
-
-        if (String(c.key).endsWith('.opf')) {
-          try {
-            const text = await decodeVal(c.value);
-            const doc = new DOMParser().parseFromString(text, 'application/xml');
-            res(doc.querySelector('title')?.textContent || null);
-          } catch {
-            res(null);
-          }
-        } else {
-          c.continue();
-        }
-      };
-      req.onerror = () => res(null);
+    return books.sort((a, b) => {
+      return (a.title || a.id).localeCompare(b.title || b.id);
     });
   }
 
-  // ── Download a specific book ────────────────────────────────────────────
-  async function downloadBook(book, dlBtn) {
-    dlBtn.disabled = true;
-    dlBtn.textContent = '⏳ Opening...';
+  async function getBookTitle(db) {
+    return new Promise((resolve) => {
+      const tx = db.transaction("keyvaluepairs", "readonly");
+      const store = tx.objectStore("keyvaluepairs");
+      const req = store.openCursor();
+
+      req.onsuccess = async (e) => {
+        const cursor = e.target.result;
+
+        if (!cursor) {
+          resolve(null);
+          return;
+        }
+
+        const key = String(cursor.key);
+
+        if (key.endsWith(".opf")) {
+          try {
+            const text = await decodeValue(cursor.value);
+            const xml = new DOMParser().parseFromString(text, "application/xml");
+            resolve(xml.querySelector("title")?.textContent || null);
+          } catch {
+            resolve(null);
+          }
+
+          return;
+        }
+
+        cursor.continue();
+      };
+
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Main export
+  // ─────────────────────────────────────────────
+
+  async function downloadBook(book, button, mode) {
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Opening...";
 
     try {
       const db = await openDb(book.dbName);
-      dlBtn.textContent = '⏳ Reading files...';
-      const records = await getAllRecords(db, 'keyvaluepairs');
+
+      button.textContent = "Reading files...";
+      const records = await getAllRecords(db, "keyvaluepairs");
       db.close();
 
-      const keys = Object.keys(records);
-      const opfKey = keys.find(k => /\.opf$/i.test(k) || /content\.opf$/i.test(k) || /package\.opf$/i.test(k));
-      const parser = new DOMParser();
+      const bookData = await getBookStructure(records, book.title || book.id);
 
-      let bookTitle = book.title || book.id;
-      let spineOrder = [];
-      let globalCssHrefs = [];
-
-      if (opfKey) {
-        const opfText = await decodeVal(records[opfKey]);
-        const opfDoc = parser.parseFromString(opfText, 'application/xml');
-        const t = opfDoc.querySelector('title')?.textContent;
-        if (t) bookTitle = t;
-
-        const manifest = {};
-        opfDoc.querySelectorAll('manifest item').forEach(item => {
-          const id = item.getAttribute('id');
-          const href = item.getAttribute('href');
-          const mediaType = item.getAttribute('media-type') || '';
-          if (id && href) manifest[id] = { href, mediaType };
-          if (href && /text\/css/i.test(mediaType)) globalCssHrefs.push(resolvePath(dirname(opfKey), href));
-        });
-
-        opfDoc.querySelectorAll('spine itemref').forEach(ref => {
-          const item = manifest[ref.getAttribute('idref')];
-          if (item?.href) spineOrder.push(resolvePath(dirname(opfKey), item.href));
-        });
+      if (mode === MODES.AI) {
+        await exportAi(bookData, records, button);
+      } else {
+        await exportReader(bookData, records, button);
       }
 
-      if (!spineOrder.length) {
-        spineOrder = keys.filter(k => /\.(xhtml|html|htm)$/i.test(k)).sort();
-      }
-
-      // Remove duplicated CSS hrefs.
-      globalCssHrefs = [...new Set(globalCssHrefs)];
-
-      dlBtn.textContent = '⏳ Building CSS...';
-      const globalCss = [];
-      for (const cssKey of globalCssHrefs) {
-        const realCssKey = findRecordKey(records, cssKey);
-        if (!realCssKey) continue;
-        const cssText = await decodeVal(records[realCssKey]);
-        globalCss.push(await rewriteCssUrls(cssText, dirname(realCssKey), records));
-      }
-
-      let bodyHtml = '';
-      for (let i = 0; i < spineOrder.length; i++) {
-        dlBtn.textContent = `⏳ Chapter ${i + 1} / ${spineOrder.length}`;
-
-        const chapterKey = findRecordKey(records, spineOrder[i]);
-        if (!chapterKey || !records[chapterKey]) continue;
-
-        const text = await decodeVal(records[chapterKey]);
-        const doc = parser.parseFromString(text, 'text/html');
-        await rewriteDocumentAssets(doc, chapterKey, records, globalCss);
-
-        // Keep CSS and content, but remove scripts. Scripts usually break outside Unibok.
-        doc.querySelectorAll('script').forEach(el => el.remove());
-
-        bodyHtml += `\n<section class="ub-chapter" data-source="${escapeHtml(chapterKey)}">\n${doc.body?.innerHTML ?? ''}\n</section>\n`;
-      }
-
-      const finalHtml = `<!doctype html>
-<html lang="no">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(bookTitle)}</title>
-  <style>
-    ${baseExportCss()}
-    ${globalCss.join('\n\n')}
-  </style>
-</head>
-<body>
-  <main id="book">
-    <h1>${escapeHtml(bookTitle)}</h1>
-    ${bodyHtml}
-  </main>
-</body>
-</html>`;
-
-      const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${safeFileName(bookTitle)}.html`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-
-      dlBtn.textContent = '✅ Done!';
-      dlBtn.style.background = '#1565c0';
+      button.textContent = "Done!";
       setTimeout(() => {
-        dlBtn.textContent = '⬇ Download';
-        dlBtn.style.background = '';
-        dlBtn.disabled = false;
-      }, 4000);
+        button.textContent = oldText;
+        button.disabled = false;
+      }, 3000);
     } catch (err) {
-      console.error('[Unibok DL]', err);
-      dlBtn.textContent = '❌ Error';
+      console.error("[Unibok downloader]", err);
+      button.textContent = "Error";
       setTimeout(() => {
-        dlBtn.textContent = '⬇ Download';
-        dlBtn.disabled = false;
+        button.textContent = oldText;
+        button.disabled = false;
       }, 3000);
     }
   }
 
-  // ── Asset rewriting ─────────────────────────────────────────────────────
-  async function rewriteDocumentAssets(doc, chapterKey, records, globalCss) {
-    const chapterDir = dirname(chapterKey);
+  async function getBookStructure(records, fallbackTitle) {
+    const keys = Object.keys(records);
 
-    // Inline chapter-specific stylesheet links.
-    const stylesheetLinks = Array.from(doc.querySelectorAll('link[rel~="stylesheet"][href]'));
-    for (const link of stylesheetLinks) {
-      const href = cleanUrl(link.getAttribute('href'));
-      const cssKey = findRecordKey(records, resolvePath(chapterDir, href));
+    const opfKey = keys.find((k) => {
+      return /\.opf$/i.test(k) || /content\.opf$/i.test(k) || /package\.opf$/i.test(k);
+    });
+
+    let title = fallbackTitle;
+    let chapters = [];
+    let cssFiles = [];
+
+    if (opfKey) {
+      const opfText = await decodeValue(records[opfKey]);
+      const opf = new DOMParser().parseFromString(opfText, "application/xml");
+
+      title = opf.querySelector("title")?.textContent?.trim() || title;
+
+      const manifest = {};
+
+      opf.querySelectorAll("manifest item").forEach((item) => {
+        const id = item.getAttribute("id");
+        const href = item.getAttribute("href");
+        const mediaType = item.getAttribute("media-type") || "";
+
+        if (!id || !href) return;
+
+        const fullPath = resolvePath(dirname(opfKey), href);
+
+        manifest[id] = {
+          href: fullPath,
+          mediaType,
+        };
+
+        if (/text\/css/i.test(mediaType)) {
+          cssFiles.push(fullPath);
+        }
+      });
+
+      opf.querySelectorAll("spine itemref").forEach((ref) => {
+        const idref = ref.getAttribute("idref");
+        const item = manifest[idref];
+
+        if (item && item.href) {
+          chapters.push(item.href);
+        }
+      });
+    }
+
+    if (!chapters.length) {
+      chapters = keys.filter((k) => /\.(xhtml|html|htm)$/i.test(k)).sort();
+    }
+
+    cssFiles = [...new Set(cssFiles)];
+
+    return {
+      title,
+      chapters,
+      cssFiles,
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // Reader version
+  // ─────────────────────────────────────────────
+
+  async function exportReader(bookData, records, button) {
+    const parser = new DOMParser();
+    const cssParts = [];
+
+    button.textContent = "Building CSS...";
+
+    for (const cssPath of bookData.cssFiles) {
+      const key = findRecordKey(records, cssPath);
+      if (!key) continue;
+
+      const css = await decodeValue(records[key]);
+      const rewritten = await rewriteCssUrls(css, dirname(key), records);
+      cssParts.push(rewritten);
+    }
+
+    let content = "";
+
+    for (let i = 0; i < bookData.chapters.length; i++) {
+      button.textContent = `Reader ${i + 1}/${bookData.chapters.length}`;
+
+      const chapterKey = findRecordKey(records, bookData.chapters[i]);
+      if (!chapterKey) continue;
+
+      const chapterText = await decodeValue(records[chapterKey]);
+      const doc = parser.parseFromString(chapterText, "text/html");
+
+      await rewriteAssetsInDocument(doc, chapterKey, records, cssParts);
+
+      doc.querySelectorAll("script").forEach((el) => el.remove());
+
+      content += `
+<section class="ub-chapter" data-source="${escapeHtml(chapterKey)}">
+${doc.body ? doc.body.innerHTML : doc.documentElement.innerHTML}
+</section>`;
+    }
+
+    const html = `<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(bookData.title)} - Reader</title>
+  <style>
+    ${readerCss()}
+    ${cssParts.join("\n\n")}
+  </style>
+</head>
+<body>
+  <main id="book">
+    <h1>${escapeHtml(bookData.title)}</h1>
+    ${content}
+  </main>
+</body>
+</html>`;
+
+    saveFile(`${safeFileName(bookData.title)} - READER.html`, html, "text/html;charset=utf-8");
+  }
+
+  async function rewriteAssetsInDocument(doc, chapterKey, records, cssParts) {
+    const baseDir = dirname(chapterKey);
+
+    const links = Array.from(doc.querySelectorAll('link[rel~="stylesheet"][href]'));
+
+    for (const link of links) {
+      const href = link.getAttribute("href");
+      const cssKey = findRecordKey(records, resolvePath(baseDir, href));
+
       if (cssKey) {
-        const cssText = await decodeVal(records[cssKey]);
-        const rewrittenCss = await rewriteCssUrls(cssText, dirname(cssKey), records);
-        globalCss.push(rewrittenCss);
+        const css = await decodeValue(records[cssKey]);
+        cssParts.push(await rewriteCssUrls(css, dirname(cssKey), records));
       }
+
       link.remove();
     }
 
-    // Rewrite <style> url(...) references.
-    for (const styleEl of Array.from(doc.querySelectorAll('style'))) {
-      styleEl.textContent = await rewriteCssUrls(styleEl.textContent || '', chapterDir, records);
+    for (const style of Array.from(doc.querySelectorAll("style"))) {
+      style.textContent = await rewriteCssUrls(style.textContent || "", baseDir, records);
     }
 
-    // Rewrite normal images.
-    for (const img of Array.from(doc.querySelectorAll('img[src]'))) {
-      await rewriteUrlAttribute(img, 'src', chapterDir, records);
+    for (const img of Array.from(doc.querySelectorAll("img[src]"))) {
+      await rewriteUrlAttribute(img, "src", baseDir, records);
     }
 
-    // Rewrite responsive images.
-    for (const el of Array.from(doc.querySelectorAll('source[srcset], img[srcset]'))) {
-      const srcset = el.getAttribute('srcset');
-      if (srcset) el.setAttribute('srcset', await rewriteSrcset(srcset, chapterDir, records));
+    for (const el of Array.from(doc.querySelectorAll("img[srcset], source[srcset]"))) {
+      const srcset = el.getAttribute("srcset");
+      if (srcset) {
+        el.setAttribute("srcset", await rewriteSrcset(srcset, baseDir, records));
+      }
     }
 
-    // Rewrite SVG image hrefs.
-    for (const el of Array.from(doc.querySelectorAll('image[href], image[xlink\\:href]'))) {
-      if (el.hasAttribute('href')) await rewriteUrlAttribute(el, 'href', chapterDir, records);
-      if (el.hasAttribute('xlink:href')) await rewriteUrlAttribute(el, 'xlink:href', chapterDir, records);
+    for (const el of Array.from(doc.querySelectorAll("image[href], image[xlink\\:href]"))) {
+      if (el.hasAttribute("href")) {
+        await rewriteUrlAttribute(el, "href", baseDir, records);
+      }
+
+      if (el.hasAttribute("xlink:href")) {
+        await rewriteUrlAttribute(el, "xlink:href", baseDir, records);
+      }
     }
 
-    // Rewrite poster images on videos if present.
-    for (const video of Array.from(doc.querySelectorAll('video[poster]'))) {
-      await rewriteUrlAttribute(video, 'poster', chapterDir, records);
+    for (const video of Array.from(doc.querySelectorAll("video[poster]"))) {
+      await rewriteUrlAttribute(video, "poster", baseDir, records);
     }
 
-    // Make internal anchor links not point to missing files.
-    for (const a of Array.from(doc.querySelectorAll('a[href]'))) {
-      const href = a.getAttribute('href');
-      if (!href || isExternalOrDataUrl(href) || href.startsWith('#')) continue;
-      const hash = href.includes('#') ? href.slice(href.indexOf('#')) : '';
-      a.setAttribute('href', hash || '#');
+    for (const a of Array.from(doc.querySelectorAll("a[href]"))) {
+      const href = a.getAttribute("href");
+
+      if (!href || href.startsWith("#") || isExternalUrl(href)) continue;
+
+      const hash = href.includes("#") ? href.slice(href.indexOf("#")) : "#";
+      a.setAttribute("href", hash);
     }
   }
 
   async function rewriteUrlAttribute(el, attr, baseDir, records) {
     const original = el.getAttribute(attr);
-    if (!original || isExternalOrDataUrl(original)) return;
 
-    const dataUrl = await recordToDataUrlByHref(original, baseDir, records);
-    if (dataUrl) el.setAttribute(attr, dataUrl);
+    if (!original || isExternalUrl(original)) return;
+
+    const dataUrl = await assetToDataUrl(original, baseDir, records);
+
+    if (dataUrl) {
+      el.setAttribute(attr, dataUrl);
+    }
   }
 
   async function rewriteSrcset(srcset, baseDir, records) {
-    const parts = srcset.split(',').map(part => part.trim()).filter(Boolean);
-    const rewritten = [];
+    const parts = srcset.split(",").map((x) => x.trim()).filter(Boolean);
+    const result = [];
 
     for (const part of parts) {
-      const [url, ...descriptor] = part.split(/\s+/);
-      if (isExternalOrDataUrl(url)) {
-        rewritten.push(part);
+      const split = part.split(/\s+/);
+      const url = split[0];
+      const descriptor = split.slice(1).join(" ");
+
+      if (isExternalUrl(url)) {
+        result.push(part);
         continue;
       }
-      const dataUrl = await recordToDataUrlByHref(url, baseDir, records);
-      rewritten.push(`${dataUrl || url}${descriptor.length ? ' ' + descriptor.join(' ') : ''}`);
+
+      const dataUrl = await assetToDataUrl(url, baseDir, records);
+      result.push(`${dataUrl || url}${descriptor ? " " + descriptor : ""}`);
     }
 
-    return rewritten.join(', ');
+    return result.join(", ");
   }
 
   async function rewriteCssUrls(cssText, baseDir, records) {
+    let output = cssText;
+
     const urlRegex = /url\((['"]?)([^'"()]+)\1\)/gi;
     const matches = [...cssText.matchAll(urlRegex)];
-    let rewritten = cssText;
 
     for (const match of matches) {
       const full = match[0];
       const url = match[2].trim();
-      if (!url || isExternalOrDataUrl(url) || url.startsWith('#')) continue;
 
-      const dataUrl = await recordToDataUrlByHref(url, baseDir, records);
-      if (dataUrl) rewritten = rewritten.replace(full, `url("${dataUrl}")`);
+      if (!url || url.startsWith("#") || isExternalUrl(url)) continue;
+
+      const dataUrl = await assetToDataUrl(url, baseDir, records);
+
+      if (dataUrl) {
+        output = output.replace(full, `url("${dataUrl}")`);
+      }
     }
 
-    // Basic @import support for local CSS files.
     const importRegex = /@import\s+(?:url\()?['"]?([^'"\);]+)['"]?\)?\s*;/gi;
-    const imports = [...rewritten.matchAll(importRegex)];
+    const imports = [...output.matchAll(importRegex)];
+
     for (const match of imports) {
       const full = match[0];
       const href = match[1].trim();
-      if (isExternalOrDataUrl(href)) continue;
+
+      if (isExternalUrl(href)) continue;
 
       const cssKey = findRecordKey(records, resolvePath(baseDir, href));
       if (!cssKey) continue;
-      const importedCss = await decodeVal(records[cssKey]);
-      const fixedImportedCss = await rewriteCssUrls(importedCss, dirname(cssKey), records);
-      rewritten = rewritten.replace(full, fixedImportedCss);
+
+      const importedCss = await decodeValue(records[cssKey]);
+      const fixedCss = await rewriteCssUrls(importedCss, dirname(cssKey), records);
+
+      output = output.replace(full, fixedCss);
     }
 
-    return rewritten;
+    return output;
   }
 
-  async function recordToDataUrlByHref(href, baseDir, records) {
-    const clean = cleanUrl(href);
-    const wanted = resolvePath(baseDir, clean);
+  async function assetToDataUrl(url, baseDir, records) {
+    const cleaned = cleanUrl(url);
+    const wanted = resolvePath(baseDir, cleaned);
     const key = findRecordKey(records, wanted);
+
     if (!key) return null;
+
     return valueToDataUrl(records[key], mimeFromPath(key));
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
-  const openDb = name => new Promise((res, rej) => {
-    const req = indexedDB.open(name);
-    req.onsuccess = e => res(e.target.result);
-    req.onerror = rej;
-  });
+  // ─────────────────────────────────────────────
+  // AI version
+  // ─────────────────────────────────────────────
 
-  const countRecords = (db, store) => new Promise(res => {
-    try {
-      const req = db.transaction(store, 'readonly').objectStore(store).count();
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => res(0);
-    } catch {
-      res(0);
+  async function exportAi(bookData, records, button) {
+    const parser = new DOMParser();
+
+    let htmlContent = "";
+    let textContent = "";
+
+    for (let i = 0; i < bookData.chapters.length; i++) {
+      button.textContent = `AI ${i + 1}/${bookData.chapters.length}`;
+
+      const chapterKey = findRecordKey(records, bookData.chapters[i]);
+      if (!chapterKey) continue;
+
+      const chapterText = await decodeValue(records[chapterKey]);
+      const doc = parser.parseFromString(chapterText, "text/html");
+
+      cleanForAi(doc);
+
+      const chapterTitle =
+        doc.querySelector("h1,h2,h3,title")?.textContent?.trim() ||
+        `Kapittel ${i + 1}`;
+
+      const body = doc.body || doc.documentElement;
+
+      htmlContent += `
+<section class="chapter" data-source="${escapeHtml(chapterKey)}">
+  <h2>${escapeHtml(chapterTitle)}</h2>
+  ${makeSemanticHtml(body)}
+</section>`;
+
+      textContent += `\n\n# ${chapterTitle}\n\n${makePlainText(body)}\n`;
     }
-  });
 
-  const getAllRecords = (db, store) => new Promise((res, rej) => {
-    const all = {};
-    const req = db.transaction(store, 'readonly').objectStore(store).openCursor();
-    req.onsuccess = e => {
-      const c = e.target.result;
-      if (c) {
-        all[String(c.key)] = c.value;
-        c.continue();
-      } else {
-        res(all);
-      }
-    };
-    req.onerror = rej;
-  });
+    const html = `<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(bookData.title)} - AI</title>
+  <style>
+    ${aiCss()}
+  </style>
+</head>
+<body>
+  <article id="book">
+    <header>
+      <h1>${escapeHtml(bookData.title)}</h1>
+      <p class="meta">
+        Dette er en ren AI-versjon. Bilder, scripts, menyer og tung styling er fjernet.
+        Overskrifter, tekst, lister og tabeller er beholdt.
+      </p>
+    </header>
+    ${htmlContent}
+  </article>
+</body>
+</html>`;
 
-  async function decodeVal(val) {
-    if (typeof val === 'string') return val;
-    if (val instanceof Blob) return val.text();
-    if (val instanceof ArrayBuffer) return new TextDecoder().decode(val);
-    if (ArrayBuffer.isView(val)) return new TextDecoder().decode(val);
-    if (val?.buffer instanceof ArrayBuffer) return new TextDecoder().decode(val.buffer);
-    return String(val);
+    saveFile(`${safeFileName(bookData.title)} - AI.html`, html, "text/html;charset=utf-8");
+    saveFile(`${safeFileName(bookData.title)} - AI.txt`, textContent.trim(), "text/plain;charset=utf-8");
   }
 
-  async function valueToDataUrl(val, mime) {
-    const blob = val instanceof Blob
-      ? val
-      : val instanceof ArrayBuffer
-        ? new Blob([val], { type: mime })
-        : ArrayBuffer.isView(val)
-          ? new Blob([val.buffer], { type: mime })
-          : typeof val === 'string'
-            ? new Blob([val], { type: mime })
-            : new Blob([String(val)], { type: mime });
+  function cleanForAi(doc) {
+    doc.querySelectorAll(`
+      script, style, link, svg, canvas, iframe, object, embed,
+      video, audio, nav, aside, footer, form, button, input,
+      select, textarea, [role="navigation"], [aria-hidden="true"]
+    `).forEach((el) => el.remove());
+
+    doc.querySelectorAll("img").forEach((img) => {
+      const alt = img.getAttribute("alt")?.trim();
+      const p = doc.createElement("p");
+      p.className = "image-note";
+      p.textContent = alt ? `[Bilde: ${alt}]` : "[Bilde fjernet]";
+      img.replaceWith(p);
+    });
+
+    doc.querySelectorAll("*").forEach((el) => {
+      for (const attr of Array.from(el.attributes)) {
+        const name = attr.name.toLowerCase();
+
+        if (name !== "rowspan" && name !== "colspan") {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+
+    doc.querySelectorAll("*").forEach((el) => {
+      const keepEmpty = ["BR", "HR", "TD", "TH"].includes(el.tagName);
+
+      if (!keepEmpty && !el.textContent.trim()) {
+        el.remove();
+      }
+    });
+  }
+
+  function makeSemanticHtml(root) {
+    const allowed = new Set([
+      "H1", "H2", "H3", "H4", "H5", "H6",
+      "P", "UL", "OL", "LI",
+      "TABLE", "THEAD", "TBODY", "TR", "TH", "TD",
+      "BLOCKQUOTE", "PRE", "CODE",
+      "STRONG", "B", "EM", "I", "SUB", "SUP",
+      "BR", "HR",
+    ]);
+
+    const clone = root.cloneNode(true);
+
+    function cleanNode(node) {
+      for (const child of Array.from(node.children || [])) {
+        cleanNode(child);
+
+        if (!allowed.has(child.tagName)) {
+          const parent = child.parentNode;
+
+          while (child.firstChild) {
+            parent.insertBefore(child.firstChild, child);
+          }
+
+          parent.removeChild(child);
+        }
+      }
+    }
+
+    cleanNode(clone);
+
+    return clone.innerHTML
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function makePlainText(root) {
+    const clone = root.cloneNode(true);
+
+    clone.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,tr,blockquote,pre").forEach((el) => {
+      el.insertAdjacentText("beforebegin", "\n");
+      el.insertAdjacentText("afterend", "\n");
+    });
+
+    clone.querySelectorAll("td,th").forEach((el) => {
+      el.insertAdjacentText("afterend", " | ");
+    });
+
+    return clone.textContent
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n[ \t]+/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // ─────────────────────────────────────────────
+  // IndexedDB helpers
+  // ─────────────────────────────────────────────
+
+  function openDb(name) {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(name);
+
+      req.onsuccess = (e) => resolve(e.target.result);
+      req.onerror = reject;
+    });
+  }
+
+  function countRecords(db, storeName) {
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, "readonly");
+        const req = tx.objectStore(storeName).count();
+
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(0);
+      } catch {
+        resolve(0);
+      }
+    });
+  }
+
+  function getAllRecords(db, storeName) {
+    return new Promise((resolve, reject) => {
+      const all = {};
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const req = store.openCursor();
+
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+
+        if (!cursor) {
+          resolve(all);
+          return;
+        }
+
+        all[String(cursor.key)] = cursor.value;
+        cursor.continue();
+      };
+
+      req.onerror = reject;
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // General helpers
+  // ─────────────────────────────────────────────
+
+  async function decodeValue(value) {
+    if (typeof value === "string") return value;
+
+    if (value instanceof Blob) {
+      return value.text();
+    }
+
+    if (value instanceof ArrayBuffer) {
+      return new TextDecoder().decode(value);
+    }
+
+    if (ArrayBuffer.isView(value)) {
+      return new TextDecoder().decode(value);
+    }
+
+    if (value?.buffer instanceof ArrayBuffer) {
+      return new TextDecoder().decode(value.buffer);
+    }
+
+    return String(value);
+  }
+
+  function valueToDataUrl(value, mime) {
+    const blob =
+      value instanceof Blob
+        ? value
+        : value instanceof ArrayBuffer
+          ? new Blob([value], { type: mime })
+          : ArrayBuffer.isView(value)
+            ? new Blob([value.buffer], { type: mime })
+            : typeof value === "string"
+              ? new Blob([value], { type: mime })
+              : new Blob([String(value)], { type: mime });
 
     const finalBlob = blob.type ? blob : blob.slice(0, blob.size, mime);
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
+
       reader.onload = () => resolve(reader.result);
       reader.onerror = reject;
+
       reader.readAsDataURL(finalBlob);
     });
   }
 
+  function saveFile(filename, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
   function findRecordKey(records, wantedPath) {
     const keys = Object.keys(records);
-    const wanted = normalizePath(cleanUrl(wantedPath));
-    const wantedLower = wanted.toLowerCase();
+    const wanted = normalizePath(cleanUrl(wantedPath)).toLowerCase();
 
-    return keys.find(k => normalizePath(k).toLowerCase() === wantedLower)
-      || keys.find(k => normalizePath(k).toLowerCase().endsWith('/' + wantedLower))
-      || keys.find(k => normalizePath(k).toLowerCase().endsWith(wantedLower));
+    return (
+      keys.find((k) => normalizePath(k).toLowerCase() === wanted) ||
+      keys.find((k) => normalizePath(k).toLowerCase().endsWith("/" + wanted)) ||
+      keys.find((k) => normalizePath(k).toLowerCase().endsWith(wanted))
+    );
   }
 
   function cleanUrl(url) {
     try {
-      return decodeURIComponent(String(url).split('#')[0].split('?')[0]);
+      return decodeURIComponent(String(url).split("#")[0].split("?")[0]);
     } catch {
-      return String(url).split('#')[0].split('?')[0];
+      return String(url).split("#")[0].split("?")[0];
     }
   }
 
-  function isExternalOrDataUrl(url) {
+  function isExternalUrl(url) {
     return /^(https?:|data:|blob:|mailto:|tel:|javascript:)/i.test(String(url).trim());
   }
 
   function dirname(path) {
     const clean = normalizePath(path);
-    const idx = clean.lastIndexOf('/');
-    return idx >= 0 ? clean.slice(0, idx) : '';
+    const index = clean.lastIndexOf("/");
+
+    if (index === -1) return "";
+
+    return clean.slice(0, index);
   }
 
   function resolvePath(baseDir, relativePath) {
     const rel = cleanUrl(relativePath);
-    if (!rel || rel.startsWith('/')) return normalizePath(rel.replace(/^\/+/, ''));
+
+    if (!rel) return "";
+
+    if (rel.startsWith("/")) {
+      return normalizePath(rel.replace(/^\/+/, ""));
+    }
+
     return normalizePath(`${baseDir}/${rel}`);
   }
 
   function normalizePath(path) {
-    const parts = String(path).replace(/\\/g, '/').split('/');
-    const out = [];
+    const parts = String(path).replace(/\\/g, "/").split("/");
+    const output = [];
+
     for (const part of parts) {
-      if (!part || part === '.') continue;
-      if (part === '..') out.pop();
-      else out.push(part);
+      if (!part || part === ".") continue;
+
+      if (part === "..") {
+        output.pop();
+      } else {
+        output.push(part);
+      }
     }
-    return out.join('/');
+
+    return output.join("/");
   }
 
   function mimeFromPath(path) {
-    const ext = path.split('.').pop().toLowerCase();
+    const ext = path.split(".").pop().toLowerCase();
+
     const map = {
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      gif: 'image/gif',
-      svg: 'image/svg+xml',
-      webp: 'image/webp',
-      avif: 'image/avif',
-      css: 'text/css',
-      woff: 'font/woff',
-      woff2: 'font/woff2',
-      ttf: 'font/ttf',
-      otf: 'font/otf',
-      mp3: 'audio/mpeg',
-      mp4: 'video/mp4',
-      m4a: 'audio/mp4',
-      html: 'text/html',
-      htm: 'text/html',
-      xhtml: 'application/xhtml+xml',
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      svg: "image/svg+xml",
+      webp: "image/webp",
+      avif: "image/avif",
+      css: "text/css",
+      woff: "font/woff",
+      woff2: "font/woff2",
+      ttf: "font/ttf",
+      otf: "font/otf",
+      mp3: "audio/mpeg",
+      mp4: "video/mp4",
+      m4a: "audio/mp4",
+      html: "text/html",
+      htm: "text/html",
+      xhtml: "application/xhtml+xml",
     };
-    return map[ext] || 'application/octet-stream';
+
+    return map[ext] || "application/octet-stream";
   }
 
   function safeFileName(name) {
-    return String(name).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'unibok';
+    return String(name)
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, " ")
+      .trim() || "unibok";
   }
 
   function escapeHtml(value) {
     return String(value)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
-  function baseExportCss() {
+  function readerCss() {
     return `
-      html { background: #f5f5f5; }
+      html {
+        background: #f5f5f5;
+      }
+
       body {
         margin: 0;
         padding: 24px;
@@ -571,6 +991,7 @@
         line-height: 1.55;
         color: #111;
       }
+
       #book {
         max-width: 980px;
         margin: 0 auto;
@@ -578,19 +999,101 @@
         padding: 32px;
         box-shadow: 0 2px 18px rgba(0,0,0,.08);
       }
+
       img, svg, video, audio, canvas {
         max-width: 100%;
         height: auto;
       }
+
       .ub-chapter {
         margin-top: 32px;
         padding-top: 24px;
         border-top: 1px solid #ddd;
       }
+
       @media print {
-        html { background: white; }
-        body { padding: 0; }
-        #book { box-shadow: none; max-width: none; padding: 0; }
+        html {
+          background: white;
+        }
+
+        body {
+          padding: 0;
+        }
+
+        #book {
+          box-shadow: none;
+          max-width: none;
+          padding: 0;
+        }
+      }
+    `;
+  }
+
+  function aiCss() {
+    return `
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #fafafa;
+        color: #111;
+        font-family: Arial, sans-serif;
+        line-height: 1.65;
+      }
+
+      #book {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        padding: 32px;
+        border: 1px solid #ddd;
+      }
+
+      h1, h2, h3, h4 {
+        line-height: 1.25;
+        margin-top: 1.6em;
+      }
+
+      p, li {
+        font-size: 16px;
+      }
+
+      .meta,
+      .image-note {
+        color: #666;
+        font-size: 14px;
+      }
+
+      .chapter {
+        border-top: 2px solid #ddd;
+        margin-top: 32px;
+        padding-top: 24px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+      }
+
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        vertical-align: top;
+      }
+
+      blockquote {
+        border-left: 4px solid #ccc;
+        margin-left: 0;
+        padding-left: 16px;
+        color: #333;
+      }
+
+      pre,
+      code {
+        white-space: pre-wrap;
+        background: #f4f4f4;
+        padding: 2px 4px;
       }
     `;
   }
