@@ -8,8 +8,8 @@
   const SETUP = {
     buttonText: "Download Smartbok excerpt",
     defaultStartPage: 1,
-    defaultEndPage: 10,
-    maxPages: 20,
+    defaultEndPage: 99999,
+    maxPages: 999999,
     fileType: "md", // "md" or "txt"
     buttonRight: "24px",
     buttonBottom: "24px",
