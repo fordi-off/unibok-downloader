@@ -1,104 +1,120 @@
-# 📚 Unibok Book Downloader
+# Book Exporter: Unibok + Smartbok
 
-> A Tampermonkey userscript that lets you download offline books from [unibok.no](https://les.unibok.no) as readable HTML files — copyable text, openable in any browser, Word, or text editor.
+This project gives you one Tampermonkey loader that automatically runs the correct exporter depending on the website you are currently using.
 
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tampermonkey](https://img.shields.io/badge/Tampermonkey-compatible-blue)
-![Platform](https://img.shields.io/badge/site-unibok.no-orange)
+- On `les.unibok.no`, it loads the Unibok exporter.
+- On `bok2.smartbok.no` or `www.smartbok.no`, it loads the Smartbok exporter.
 
----
+The Tampermonkey script itself stays small. It only loads `src/book-exporter-router.js` from your GitHub repo. The router then loads the correct local module from the same repo.
 
-## ✨ Features
+## Project structure
 
-- 🟢 Floating **Download Book** button appears on every page
-- 📋 Shows a **list of all books** you have saved for offline use
-- 📄 Downloads as a clean, readable **HTML file**
-- ✂️ Fully **copy-pasteable** text — works in Word, Google Docs, text editors
-- 🖨️ Print to PDF straight from your browser
-- 🔄 Script is loaded from GitHub — **updates automatically**, no reinstall needed
-
----
-
-## 📋 Requirements
-
-- [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Firefox, Edge, Safari)
-- A [unibok.no](https://les.unibok.no) account with at least one book downloaded for **offline use**
-
-> **How to download a book for offline use on unibok.no:**  
-> Open a book → click the **cloud/download icon** in the reader toolbar → wait for it to finish downloading.
-
----
-
-## 🚀 Installation
-
-### Step 1 — Install Tampermonkey
-
-| Browser | Link |
-|---------|------|
-| Chrome | [Chrome Web Store](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) |
-| Firefox | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/) |
-| Edge | [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd) |
-
-### Step 2 — Install the userscript
-
-1. Click the **Tampermonkey icon** in your browser toolbar
-2. Select **Create a new script**
-3. Delete all existing content in the editor
-4. Copy and paste the contents of [`tampermonkey.user.js`](./tampermonkey.user.js)
-5. Replace `YOUR_USERNAME` with your actual GitHub username (2 places)
-6. Press **Ctrl + S** (or Cmd + S) to save
-
-> **Alternative:** If Tampermonkey supports direct installs from raw URLs, you can navigate to the raw `tampermonkey.user.js` file and Tampermonkey may prompt you to install it automatically.
-
-### Step 3 — Use it
-
-1. Go to [les.unibok.no](https://les.unibok.no) and open any book
-2. A **green button** appears in the bottom-right corner of the page
-3. Click it → a popup shows all your offline-downloaded books
-4. Click **⬇ Download** next to the book you want
-5. The file saves as `BookTitle.html` in your downloads folder
-
----
-
-## 📁 Repository Structure
-
-```
-unibok-downloader/
-├── unibok-downloader.js   ← Full script logic (loaded by Tampermonkey)
-├── tampermonkey.user.js   ← Tiny installer script (paste into Tampermonkey)
-└── README.md
+```text
+book-exporter/
+├── README.md
+├── LICENSE
+├── tampermonkey.user.js
+└── src/
+    ├── book-exporter-router.js
+    ├── smartbok-exporter.js
+    └── unibok-downloader.js
 ```
 
----
+## Important setup
 
-## 🔧 How It Works
+After uploading this project to GitHub, you must edit two URLs.
 
-Unibok stores offline books in the browser's **IndexedDB** using [localForage](https://github.com/localForage/localForage), with one database per book (`bookId_XXXXX`). Each database contains the full EPUB content — HTML chapters, images, and an OPF manifest.
+### 1. Edit `tampermonkey.user.js`
 
-This script:
-1. Scans all `bookId_*` IndexedDB databases and finds ones with content
-2. Reads the EPUB OPF manifest to get the correct chapter order
-3. Assembles all chapters into a single styled HTML file
-4. Triggers a browser download
+Change this:
 
----
+```js
+const ROUTER_URL =
+  "https://raw.githubusercontent.com/YOUR_USERNAME/book-exporter/main/src/book-exporter-router.js";
+```
 
-## 🔄 Updating
+to your real raw GitHub URL, for example:
 
-Because Tampermonkey loads the script directly from GitHub via `@require`, **you never need to reinstall**. Just push changes to `unibok-downloader.js` and the next page load will use the new version.
+```js
+const ROUTER_URL =
+  "https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main/src/book-exporter-router.js";
+```
 
-> Note: Tampermonkey may cache `@require` scripts for a few hours. To force an immediate update, go to Tampermonkey → your script → **check for updates**.
+### 2. Edit `src/book-exporter-router.js`
 
----
+Change this:
 
-## ⚠️ Notes
+```js
+githubRawBase: "https://raw.githubusercontent.com/YOUR_USERNAME/book-exporter/main",
+```
 
-- Only books downloaded for **offline use** can be extracted (the cloud icon in the reader)
-- Images in the downloaded HTML file will not load (they are stored as binary blobs, not linked URLs)
-- This tool reads data already stored on your own computer — it does not make any network requests to unibok's servers
+to your real repo base URL, for example:
 
----
+```js
+githubRawBase: "https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main",
+```
 
-## 📄 License
+## How to install
 
-MIT — do whatever you want with it.
+1. Create a new GitHub repo, for example `book-exporter`.
+2. Upload all files from this package to the repo.
+3. Open `tampermonkey.user.js` and update `ROUTER_URL`.
+4. Open `src/book-exporter-router.js` and update `githubRawBase`.
+5. Open `tampermonkey.user.js` in GitHub, press **Raw**, and copy the raw URL.
+6. Open Tampermonkey.
+7. Create a new userscript.
+8. Paste the contents of `tampermonkey.user.js` into Tampermonkey.
+9. Save it.
+10. Open Unibok or Smartbok.
+
+## How it works
+
+### Router
+
+`src/book-exporter-router.js` checks the current domain:
+
+- `les.unibok.no` loads `src/unibok-downloader.js`
+- `bok2.smartbok.no` / `www.smartbok.no` loads `src/smartbok-exporter.js`
+
+### Unibok exporter
+
+The Unibok exporter looks for offline Unibok books stored in browser IndexedDB databases named like `bookId_*`. It creates a button, scans the offline storage, and lets you export an AI-friendly text/HTML version or a reader-style HTML version.
+
+### Smartbok exporter
+
+The Smartbok exporter adds a button to the Smartbok page. When you press it, it asks for a start page and end page. It then reads the Smartbok text layer files from `OPS/json`, groups the text by safe chapter/title matches when possible, and downloads a Markdown file.
+
+The Smartbok exporter has a page limit at the top of `src/smartbok-exporter.js`:
+
+```js
+maxPages: 20,
+```
+
+This is there to prevent accidental huge exports.
+
+## Setup variables
+
+Each JavaScript file has setup variables at the top:
+
+- `tampermonkey.user.js`: `ROUTER_URL`
+- `src/book-exporter-router.js`: `githubRawBase`, script paths
+- `src/smartbok-exporter.js`: default pages, max pages, file type, button text
+- `src/unibok-downloader.js`: button text and UI settings
+
+## File format
+
+Smartbok downloads as Markdown by default:
+
+```js
+fileType: "md"
+```
+
+You can change it to:
+
+```js
+fileType: "txt"
+```
+
+## Notes
+
+Use this only with books and pages you are allowed to access and export. The scripts do not provide access to books you are not already able to open in your browser.
