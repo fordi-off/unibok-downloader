@@ -195,31 +195,65 @@
     const books = [];
 
     for (const info of databases) {
-      if (!info.name || !info.name.startsWith("bookId_")) continue;
+      if (!info.name) continue;
 
+      if (info.name.startsWith("bookId_")) {
+        try {
+          const db = await openDb(info.name);
+
+          if (!Array.from(db.objectStoreNames).includes("keyvaluepairs")) {
+            db.close();
+            continue;
+          }
+
+          const count = await countRecords(db, "keyvaluepairs");
+          if (!count) {
+            db.close();
+            continue;
+          }
+
+          const title = await getBookTitle(db, "keyvaluepairs");
+          db.close();
+
+          books.push({
+            id: info.name.replace("bookId_", ""),
+            dbName: info.name,
+            storeName: "keyvaluepairs",
+            keyPrefix: null,
+            count,
+            title
+          });
+        } catch (error) {
+          console.warn("Could not inspect database:", info.name, error);
+        }
+
+        continue;
+      }
+
+      // Firefox layout: a single shared database (e.g. "localforage") holds
+      // every cached book's resource files mixed together in one store,
+      // keyed by full paths. Group those keys by book instead of by database.
       try {
         const db = await openDb(info.name);
 
-        if (!Array.from(db.objectStoreNames).includes("keyvaluepairs")) {
-          db.close();
-          continue;
+        for (const storeName of Array.from(db.objectStoreNames)) {
+          const groups = await findBookGroupsInStore(db, storeName);
+
+          for (const [prefix, group] of groups) {
+            const idMatch = prefix.match(/\/book\/([^/]+)\/epub\/([^/]+)\//i);
+
+            books.push({
+              id: idMatch ? `${idMatch[1]}_${idMatch[2]}` : prefix,
+              dbName: info.name,
+              storeName,
+              keyPrefix: prefix,
+              count: group.count,
+              title: null
+            });
+          }
         }
 
-        const count = await countRecords(db, "keyvaluepairs");
-        if (!count) {
-          db.close();
-          continue;
-        }
-
-        const title = await getBookTitle(db);
         db.close();
-
-        books.push({
-          id: info.name.replace("bookId_", ""),
-          dbName: info.name,
-          count,
-          title
-        });
       } catch (error) {
         console.warn("Could not inspect database:", info.name, error);
       }
@@ -228,10 +262,57 @@
     return books.sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
   }
 
-  async function getBookTitle(db) {
+  // Matches keys like:
+  //   /bookresource/publisher/cappelendamm/book/p205818/epub/5252/EPUB/chapter_001.xhtml
+  // and returns the shared prefix up to and including ".../book/<bookId>/epub/<epubId>/".
+  // Keys that don't fit this shape (e.g. bookmark/annotation records) return null.
+  function extractBookPrefix(key) {
+    const match = String(key).match(/^(.*?\/book\/[^/]+\/epub\/[^/]+\/)/i);
+    return match ? match[1] : null;
+  }
+
+  // Enumerates a store's keys (without reading values, since some are large
+  // blobs) and groups them by detected book prefix, counting matching keys.
+  function findBookGroupsInStore(db, storeName) {
     return new Promise(resolve => {
-      const tx = db.transaction("keyvaluepairs", "readonly");
-      const store = tx.objectStore("keyvaluepairs");
+      const groups = new Map();
+      let req;
+
+      try {
+        const store = db.transaction(storeName, "readonly").objectStore(storeName);
+        req = store.openKeyCursor ? store.openKeyCursor() : store.openCursor();
+      } catch {
+        resolve(groups);
+        return;
+      }
+
+      req.onsuccess = event => {
+        const cursor = event.target.result;
+
+        if (!cursor) {
+          resolve(groups);
+          return;
+        }
+
+        const prefix = extractBookPrefix(cursor.key);
+
+        if (prefix) {
+          const entry = groups.get(prefix);
+          if (entry) entry.count++;
+          else groups.set(prefix, { count: 1 });
+        }
+
+        cursor.continue();
+      };
+
+      req.onerror = () => resolve(groups);
+    });
+  }
+
+  async function getBookTitle(db, storeName) {
+    return new Promise(resolve => {
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
       const req = store.openCursor();
 
       req.onsuccess = async event => {
@@ -274,8 +355,16 @@
     try {
       const db = await openDb(book.dbName);
       button.textContent = "Reading...";
-      const records = await getAllRecords(db, "keyvaluepairs");
+      let records = await getAllRecords(db, book.storeName);
       db.close();
+
+      if (book.keyPrefix) {
+        const filtered = {};
+        for (const key of Object.keys(records)) {
+          if (key.startsWith(book.keyPrefix)) filtered[key] = records[key];
+        }
+        records = filtered;
+      }
 
       const structure = await getBookStructure(records, book.title || book.id);
 
