@@ -53,15 +53,7 @@ The Unibok exporter looks for offline Unibok books stored in browser IndexedDB d
 
 ### Smartbok exporter
 
-The Smartbok exporter adds a button to the Smartbok page. When you press it, it asks for a start page and end page. It then reads the Smartbok text layer files from `OPS/json`, groups the text by safe chapter/title matches when possible, and downloads a Markdown file.
-
-The Smartbok exporter has a page limit at the top of `src/smartbok-exporter.js`:
-
-```js
-maxPages: 20,
-```
-
-This is there to prevent accidental huge exports.
+The Smartbok exporter adds a button to the Smartbok page. When you press it, it scans the book and opens a window listing every detected chapter and subchapter with its page range. Check the ones you want, then press **Download selected**. It reads the Smartbok text layer files from `OPS/json`, groups the text by safe chapter/title matches, and downloads a Markdown file containing only the chapters you selected.
 
 ## Setup variables
 
@@ -69,7 +61,7 @@ Each JavaScript file has setup variables at the top. You only need to touch thes
 
 - `tampermonkey.user.js`: `ROUTER_URL`
 - `src/book-exporter-router.js`: `githubRawBase`, script paths
-- `src/smartbok-exporter.js`: default pages, max pages, file type, button text
+- `src/smartbok-exporter.js`: file type, button text
 - `src/unibok-downloader.js`: button text and UI settings
 - `src/ublock-scriptlets.js`: `ROUTER_URL`
 

@@ -6,10 +6,8 @@
   // =======================================================
 
   const SETUP = {
-    buttonText: "Download Smartbok excerpt",
-    defaultStartPage: 1,
-    defaultEndPage: 99999,
-    maxPages: 999999,
+    buttonText: "Download Smartbok chapters",
+    modalTitle: "Select chapters to download",
     fileType: "md", // "md" or "txt"
     buttonRight: "24px",
     buttonBottom: "24px",
@@ -60,112 +58,282 @@
 
     button.addEventListener("mouseenter", () => (button.style.background = "#333"));
     button.addEventListener("mouseleave", () => (button.style.background = "#111"));
-    button.addEventListener("click", runPrompt);
+    button.addEventListener("click", openChapterPicker);
 
     document.body.appendChild(button);
     console.log("Smartbok exporter button created.");
   }
 
-  async function runPrompt() {
+  // =======================================================
+  // CHAPTER PICKER
+  // =======================================================
+
+  async function openChapterPicker() {
+    ensureChapterModal();
+    showChapterModalStatus("Scanning book for chapters...");
+
     try {
-      const startRaw = prompt("Start page:", String(SETUP.defaultStartPage));
-      if (startRaw === null) return;
+      const cloudBookPath = sessionStorage.getItem("cloudBookPATH");
+      if (!cloudBookPath) {
+        throw new Error("Could not find cloudBookPATH. Open a Smartbok book first.");
+      }
 
-      const endRaw = prompt("End page:", String(SETUP.defaultEndPage));
-      if (endRaw === null) return;
+      const bookTitle = sessionStorage.getItem("bookTitle") || document.title || "Smartbok excerpt";
+      const BOOK_BASE = cloudBookPath.replace(/\/$/, "");
+      const JSON_BASE = BOOK_BASE + "/OPS/json";
 
-      const startPage = Number(startRaw);
-      const endPage = Number(endRaw);
+      const LAST_PAGE = await findLastPageNumber(BOOK_BASE, JSON_BASE, 5000);
+      const pageJsonFiles = await getAvailablePageJsonFiles(1, LAST_PAGE, LAST_PAGE);
+      const tocRows = getTocFromDom();
+      const jsonCache = {};
 
-      if (!Number.isInteger(startPage) || !Number.isInteger(endPage)) {
-        alert("Start page and end page must be whole numbers.");
+      const chapters = await scanChapterBoundaries({ JSON_BASE, pageJsonFiles, tocRows, jsonCache, LAST_PAGE });
+
+      if (!chapters.length) {
+        chapters.push({ title: bookTitle, type: "chapter", startPage: 1, endPage: LAST_PAGE });
+      }
+
+      renderChapterList(chapters, { JSON_BASE, pageJsonFiles, tocRows, jsonCache, bookTitle, LAST_PAGE });
+    } catch (error) {
+      console.error("[Smartbok exporter]", error);
+      showChapterModalStatus("Error: " + error.message);
+    }
+  }
+
+  // Pre-scans every page once to find where each chapter/subchapter begins,
+  // reusing the same JSON cache the export step will use afterwards.
+  async function scanChapterBoundaries({ JSON_BASE, pageJsonFiles, tocRows, jsonCache, LAST_PAGE }) {
+    const detections = [];
+
+    for (let pageNum = 1; pageNum <= LAST_PAGE; pageNum++) {
+      showChapterModalStatus(`Scanning book for chapters... (page ${pageNum}/${LAST_PAGE})`);
+
+      const filename = getJsonFileForPage(pageJsonFiles, pageNum, LAST_PAGE);
+      let data;
+
+      try {
+        data = await getJsonData(JSON_BASE, filename, jsonCache);
+      } catch {
+        continue;
+      }
+
+      const page = findPage(data, pageNum);
+      if (!page) continue;
+
+      const lines = extractLinesFromPage(page).map(cleanLine).filter(Boolean);
+      if (!lines.length) continue;
+
+      const title = findCertainTocTitleInLines(lines, tocRows);
+      if (!title || title.type === "content") continue;
+
+      const last = detections[detections.length - 1];
+      if (!last || last.title !== title.text) {
+        detections.push({ title: title.text, type: title.type, startPage: pageNum });
+      }
+    }
+
+    return detections.map((entry, i) => ({
+      title: entry.title,
+      type: entry.type,
+      startPage: entry.startPage,
+      endPage: i + 1 < detections.length ? detections[i + 1].startPage - 1 : LAST_PAGE
+    }));
+  }
+
+  function ensureChapterModal() {
+    injectChapterModalStyles();
+
+    if (document.getElementById("sb-exporter-overlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "sb-exporter-overlay";
+    overlay.innerHTML = `
+      <div id="sb-exporter-modal">
+        <h2>${escapeHtml(SETUP.modalTitle)}</h2>
+        <p>Choose which chapters to include. Use this only for material you are allowed to access and export.</p>
+        <div id="sb-exporter-controls">
+          <button id="sb-exporter-select-all" type="button">Select all</button>
+          <button id="sb-exporter-select-none" type="button">Select none</button>
+        </div>
+        <div id="sb-exporter-list"><div class="sb-exporter-status">Scanning book for chapters...</div></div>
+        <div id="sb-exporter-actions">
+          <button id="sb-exporter-cancel" type="button">Cancel</button>
+          <button id="sb-exporter-download" type="button" disabled>Download selected</button>
+        </div>
+      </div>
+    `;
+
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) closeChapterModal();
+    });
+
+    document.body.appendChild(overlay);
+    document.getElementById("sb-exporter-cancel").addEventListener("click", closeChapterModal);
+    overlay.classList.add("open");
+  }
+
+  function closeChapterModal() {
+    const overlay = document.getElementById("sb-exporter-overlay");
+    if (overlay) overlay.classList.remove("open");
+  }
+
+  function showChapterModalStatus(message) {
+    const list = document.getElementById("sb-exporter-list");
+    if (list) list.innerHTML = `<div class="sb-exporter-status">${escapeHtml(message)}</div>`;
+  }
+
+  function renderChapterList(chapters, ctx) {
+    const list = document.getElementById("sb-exporter-list");
+    const downloadButton = document.getElementById("sb-exporter-download");
+    if (!list || !downloadButton) return;
+
+    list.innerHTML = "";
+
+    chapters.forEach((chapter, index) => {
+      const row = document.createElement("label");
+      row.className = `sb-exporter-row sb-exporter-row-${chapter.type}`;
+      row.innerHTML = `
+        <input type="checkbox" checked data-index="${index}">
+        <span class="sb-exporter-row-title">${escapeHtml(chapter.title)}</span>
+        <span class="sb-exporter-row-meta">p. ${chapter.startPage}–${chapter.endPage}</span>
+      `;
+      list.appendChild(row);
+    });
+
+    const checkboxes = () => Array.from(list.querySelectorAll('input[type="checkbox"]'));
+    downloadButton.disabled = false;
+
+    document.getElementById("sb-exporter-select-all").onclick = () => checkboxes().forEach(box => (box.checked = true));
+    document.getElementById("sb-exporter-select-none").onclick = () => checkboxes().forEach(box => (box.checked = false));
+
+    downloadButton.onclick = async () => {
+      const selected = checkboxes().filter(box => box.checked).map(box => chapters[Number(box.dataset.index)]);
+
+      if (!selected.length) {
+        alert("Select at least one chapter.");
         return;
       }
 
-      await exportRange(startPage, endPage);
-    } catch (error) {
-      console.error("[Smartbok exporter]", error);
-      alert("Error: " + error.message);
-    }
+      downloadButton.disabled = true;
+      downloadButton.textContent = "Downloading...";
+
+      try {
+        await exportSelectedChapters(selected, ctx);
+        closeChapterModal();
+      } catch (error) {
+        console.error("[Smartbok exporter]", error);
+        alert("Error: " + error.message);
+      } finally {
+        downloadButton.disabled = false;
+        downloadButton.textContent = "Download selected";
+      }
+    };
+  }
+
+  function injectChapterModalStyles() {
+    if (document.getElementById("sb-exporter-styles")) return;
+
+    const style = document.createElement("style");
+    style.id = "sb-exporter-styles";
+    style.textContent = `
+      #sb-exporter-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999998;
+        background: rgba(0,0,0,.55);
+        align-items: center;
+        justify-content: center;
+      }
+      #sb-exporter-overlay.open { display: flex; }
+      #sb-exporter-modal {
+        width: min(640px, 94vw);
+        max-height: 84vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.3);
+        font-family: Arial, sans-serif;
+      }
+      #sb-exporter-modal h2 { margin: 0 0 6px; font-size: 20px; color: #111; }
+      #sb-exporter-modal p { margin: 0 0 14px; color: #555; font-size: 13px; line-height: 1.45; }
+      #sb-exporter-controls { display: flex; gap: 8px; margin-bottom: 10px; }
+      #sb-exporter-controls button { border: 1px solid #ccc; background: #f5f5f5; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+      #sb-exporter-controls button:hover { background: #eee; }
+      #sb-exporter-list { overflow: auto; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 16px; flex: 1; }
+      .sb-exporter-status { padding: 20px; text-align: center; color: #666; }
+      .sb-exporter-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #eee; cursor: pointer; }
+      .sb-exporter-row:last-child { border-bottom: none; }
+      .sb-exporter-row:hover { background: #f5f5f5; }
+      .sb-exporter-row-subchapter .sb-exporter-row-title { padding-left: 16px; color: #444; }
+      .sb-exporter-row-title { font-weight: 700; color: #222; }
+      .sb-exporter-row-meta { font-size: 12px; color: #777; white-space: nowrap; }
+      #sb-exporter-actions { display: flex; justify-content: flex-end; gap: 10px; }
+      #sb-exporter-actions button { border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; font-weight: 700; }
+      #sb-exporter-cancel { background: #eee; }
+      #sb-exporter-download { background: #111; color: #fff; }
+      #sb-exporter-download:disabled { background: #aaa; cursor: default; }
+    `;
+
+    document.head.appendChild(style);
   }
 
   // =======================================================
   // MAIN EXPORT
   // =======================================================
 
-  async function exportRange(START_PAGE, END_PAGE) {
-    const cloudBookPath = sessionStorage.getItem("cloudBookPATH");
-    const bookTitle = sessionStorage.getItem("bookTitle") || document.title || "Smartbok excerpt";
-
-    if (!cloudBookPath) {
-      throw new Error("Could not find cloudBookPATH. Open a Smartbok book first.");
-    }
-
-    if (START_PAGE < 1 || END_PAGE < 1) {
-      throw new Error("Page numbers must be 1 or higher.");
-    }
-
-    if (END_PAGE < START_PAGE) {
-      throw new Error("End page cannot be lower than start page.");
-    }
-
-    const BOOK_BASE = cloudBookPath.replace(/\/$/, "");
-    const JSON_BASE = BOOK_BASE + "/OPS/json";
-
-    const LAST_PAGE = await findLastPageNumber(BOOK_BASE, JSON_BASE, END_PAGE);
-    const REAL_END_PAGE = Math.min(END_PAGE, LAST_PAGE);
-
-    if (START_PAGE > LAST_PAGE) {
-      throw new Error(`Start page is higher than the last detected page (${LAST_PAGE}).`);
-    }
-
-    if (REAL_END_PAGE - START_PAGE + 1 > SETUP.maxPages) {
-      throw new Error(`Too many pages selected (${START_PAGE}-${REAL_END_PAGE}). Maximum is ${SETUP.maxPages} pages at once.`);
-    }
-
-    const pageJsonFiles = await getAvailablePageJsonFiles(START_PAGE, REAL_END_PAGE, LAST_PAGE);
-    const tocRows = getTocFromDom();
-    const jsonCache = {};
+  async function exportSelectedChapters(selectedChapters, ctx) {
+    const { JSON_BASE, pageJsonFiles, tocRows, jsonCache, bookTitle, LAST_PAGE } = ctx;
     const sections = [];
 
-    let currentSection = {
-      title: "No certain chapter detected",
-      type: "unknown",
-      lines: []
-    };
+    for (const chapter of selectedChapters) {
+      let currentSection = { title: chapter.title, type: chapter.type, lines: [] };
+      let sawOwnHeading = false;
 
-    function pushCurrentSection() {
-      if (currentSection.lines.some(line => cleanLine(line))) {
-        sections.push(currentSection);
+      const pushCurrentSection = () => {
+        if (currentSection.lines.some(line => cleanLine(line))) sections.push(currentSection);
+      };
+
+      for (let pageNum = chapter.startPage; pageNum <= chapter.endPage; pageNum++) {
+        const filename = getJsonFileForPage(pageJsonFiles, pageNum, LAST_PAGE);
+        let data;
+
+        try {
+          data = await getJsonData(JSON_BASE, filename, jsonCache);
+        } catch {
+          continue;
+        }
+
+        const page = findPage(data, pageNum);
+        if (!page) continue;
+
+        let lines = extractLinesFromPage(page).map(cleanLine).filter(Boolean);
+        if (!lines.length) continue;
+
+        const title = findCertainTocTitleInLines(lines, tocRows);
+
+        if (title) {
+          if (!sawOwnHeading && title.text === chapter.title) {
+            sawOwnHeading = true;
+          } else {
+            pushCurrentSection();
+            currentSection = { title: title.text, type: title.type, lines: [] };
+          }
+          lines = removeCertainHeadingLine(lines, title.text);
+        }
+
+        currentSection.lines.push(...lines);
       }
+
+      pushCurrentSection();
     }
-
-    for (let pageNum = START_PAGE; pageNum <= REAL_END_PAGE; pageNum++) {
-      const filename = getJsonFileForPage(pageJsonFiles, pageNum, LAST_PAGE);
-      const data = await getJsonData(JSON_BASE, filename, jsonCache);
-      const page = findPage(data, pageNum);
-
-      if (!page) continue;
-
-      let lines = extractLinesFromPage(page).map(cleanLine).filter(Boolean);
-      if (!lines.length) continue;
-
-      const title = findCertainTocTitleInLines(lines, tocRows);
-
-      if (title) {
-        pushCurrentSection();
-        currentSection = { title: title.text, type: title.type, lines: [] };
-        lines = removeCertainHeadingLine(lines, title.text);
-      }
-
-      currentSection.lines.push(...lines);
-    }
-
-    pushCurrentSection();
 
     let output = "";
     output += `# ${escapeMarkdownHeading(bookTitle)}\n\n`;
-    output += `Excerpt from selected page range: ${START_PAGE}–${REAL_END_PAGE}.\n\n`;
+    output += `Selected chapters: ${selectedChapters.map(chapter => chapter.title).join(", ")}\n\n`;
     output += sections.map(formatSection).join("\n\n---\n\n");
 
     console.log(output);
@@ -178,7 +346,10 @@
     }
 
     const safeBookTitle = bookTitle.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_").slice(0, 60);
-    const filename = `${safeBookTitle}_${START_PAGE}-${REAL_END_PAGE}.${SETUP.fileType}`;
+    const rangeLabel = selectedChapters.length === 1
+      ? `p${selectedChapters[0].startPage}-${selectedChapters[0].endPage}`
+      : `${selectedChapters.length}_chapters`;
+    const filename = `${safeBookTitle}_${rangeLabel}.${SETUP.fileType}`;
     const mimeType = SETUP.fileType === "md" ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8";
 
     downloadTextFile(output, filename, mimeType);
@@ -457,6 +628,10 @@
 
   function escapeMarkdownHeading(text) {
     return cleanLine(text).replace(/^#+\s*/, "");
+  }
+
+  function escapeHtml(value) {
+    return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   }
 
   function downloadTextFile(content, filename, mimeType) {
