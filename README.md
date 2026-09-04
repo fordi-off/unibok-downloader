@@ -5,12 +5,12 @@ This project gives you one Tampermonkey loader that automatically runs the corre
 - On `les.unibok.no`, it loads the Unibok exporter.
 - On `bok2.smartbok.no` or `www.smartbok.no`, it loads the Smartbok exporter.
 
-The Tampermonkey script itself stays small. It only loads `src/book-exporter-router.js` from your GitHub repo. The router then loads the correct local module from the same repo.
+The Tampermonkey script itself stays small. It only loads `src/book-exporter-router.js` from this repo (`fordi-off/unibok-downloader`) on GitHub. The router then loads the correct local module from the same repo. Everything already points at this repo, so you can install it directly without forking or editing any URLs.
 
 ## Project structure
 
 ```text
-book-exporter/
+unibok-downloader/
 ├── README.md
 ├── LICENSE
 ├── tampermonkey.user.js
@@ -21,52 +21,22 @@ book-exporter/
     └── ublock-scriptlets.js
 ```
 
-## Important setup
-
-After uploading this project to GitHub, you must edit two URLs.
-
-### 1. Edit `tampermonkey.user.js`
-
-Change this:
-
-```js
-const ROUTER_URL =
-  "https://raw.githubusercontent.com/YOUR_USERNAME/book-exporter/main/src/book-exporter-router.js";
-```
-
-to your real raw GitHub URL, for example:
-
-```js
-const ROUTER_URL =
-  "https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main/src/book-exporter-router.js";
-```
-
-### 2. Edit `src/book-exporter-router.js`
-
-Change this:
-
-```js
-githubRawBase: "https://raw.githubusercontent.com/YOUR_USERNAME/book-exporter/main",
-```
-
-to your real repo base URL, for example:
-
-```js
-githubRawBase: "https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main",
-```
-
 ## How to install
 
-1. Create a new GitHub repo, for example `book-exporter`.
-2. Upload all files from this package to the repo.
-3. Open `tampermonkey.user.js` and update `ROUTER_URL`.
-4. Open `src/book-exporter-router.js` and update `githubRawBase`.
-5. Open `tampermonkey.user.js` in GitHub, press **Raw**, and copy the raw URL.
-6. Open Tampermonkey.
-7. Create a new userscript.
-8. Paste the contents of `tampermonkey.user.js` into Tampermonkey.
-9. Save it.
-10. Open Unibok or Smartbok.
+1. Open [`tampermonkey.user.js`](tampermonkey.user.js) in this repo on GitHub and press **Raw**.
+2. Open Tampermonkey, create a new userscript, and paste in the contents of that raw file.
+3. Save it.
+4. Open Unibok or Smartbok.
+
+That's it — the script pulls everything else it needs (the router and the site-specific exporter) live from this repo, so updates to this repo reach you automatically without reinstalling.
+
+### Running your own fork instead
+
+If you fork this repo and want your fork's copy to be used instead, update the URLs so they point at your fork:
+
+- `tampermonkey.user.js`: change `ROUTER_URL` to your fork's raw URL for `src/book-exporter-router.js`.
+- `src/book-exporter-router.js`: change `githubRawBase` to your fork's raw base URL.
+- `src/ublock-scriptlets.js`: change `ROUTER_URL` to match, if you're using the uBlock Origin method below.
 
 ## How it works
 
@@ -95,13 +65,13 @@ This is there to prevent accidental huge exports.
 
 ## Setup variables
 
-Each JavaScript file has setup variables at the top:
+Each JavaScript file has setup variables at the top. You only need to touch these if you're running your own fork (see [Running your own fork instead](#running-your-own-fork-instead)):
 
 - `tampermonkey.user.js`: `ROUTER_URL`
 - `src/book-exporter-router.js`: `githubRawBase`, script paths
 - `src/smartbok-exporter.js`: default pages, max pages, file type, button text
 - `src/unibok-downloader.js`: button text and UI settings
-- `src/ublock-scriptlets.js`: `ROUTER_URL` (only needed if you use uBlock Origin instead of Tampermonkey)
+- `src/ublock-scriptlets.js`: `ROUTER_URL`
 
 ## File format
 
@@ -119,14 +89,14 @@ fileType: "txt"
 
 ## Using uBlock Origin instead of Tampermonkey
 
-If you don't want to install Tampermonkey, uBlock Origin can inject the same loader through its own scriptlet injection feature (`##+js(...)` filters). This uses `src/ublock-scriptlets.js`, which loads the router with `fetch()` instead of `GM_xmlhttpRequest` since scriptlets already run in the page's own JavaScript context.
+If you don't want to install Tampermonkey, uBlock Origin can inject the same loader through its own scriptlet injection feature (`##+js(...)` filters). This uses `src/ublock-scriptlets.js`, which loads the router with `fetch()` instead of `GM_xmlhttpRequest` since scriptlets already run in the page's own JavaScript context. It already points at this repo, so no editing is needed.
 
 1. Open uBlock Origin's dashboard → **Settings** and enable **I am an advanced user**.
 2. Click the gear icon that appears next to that setting to open **Advanced settings**.
-3. Set `userResourcesLocation` to the raw URL of your `src/ublock-scriptlets.js`, for example:
+3. Set `userResourcesLocation` to this repo's raw URL for `src/ublock-scriptlets.js`:
 
    ```text
-   https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main/src/ublock-scriptlets.js
+   https://raw.githubusercontent.com/fordi-off/unibok-downloader/main/src/ublock-scriptlets.js
    ```
 
    This adds `book-exporter.js` to uBlock Origin's available scriptlets without removing the built-in ones.
@@ -139,8 +109,6 @@ If you don't want to install Tampermonkey, uBlock Origin can inject the same loa
    ```
 
 5. Save, then reload the page. uBlock Origin will inject and run the loader the same way the Tampermonkey script does.
-
-If you also edit `githubRawBase` in `src/book-exporter-router.js` per the setup steps above, update the `ROUTER_URL` in `src/ublock-scriptlets.js` to match.
 
 ## Notes
 
