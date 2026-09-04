@@ -212,7 +212,8 @@
             continue;
           }
 
-          const title = await getBookTitle(db, "keyvaluepairs");
+          const metaKeys = await findMetadataKeysInStore(db, "keyvaluepairs");
+          const title = await resolveTitle(db, "keyvaluepairs", metaKeys);
           db.close();
 
           books.push({
@@ -241,7 +242,7 @@
 
           for (const [prefix, group] of groups) {
             const idMatch = prefix.match(/\/book\/([^/]+)\/epub\/([^/]+)\//i);
-            const title = group.opfKey ? await getTitleFromRecord(db, storeName, group.opfKey) : null;
+            const title = await resolveTitle(db, storeName, group);
 
             books.push({
               id: idMatch ? `${idMatch[1]}_${idMatch[2]}` : prefix,
@@ -300,11 +301,14 @@
         if (prefix) {
           let entry = groups.get(prefix);
           if (!entry) {
-            entry = { count: 0, opfKey: null };
+            entry = { count: 0, opfKey: null, bookInfoKey: null };
             groups.set(prefix, entry);
           }
           entry.count++;
-          if (!entry.opfKey && /\.opf$/i.test(String(cursor.key))) entry.opfKey = String(cursor.key);
+
+          const key = String(cursor.key);
+          if (!entry.opfKey && /\.opf$/i.test(key)) entry.opfKey = key;
+          if (!entry.bookInfoKey && /ravn-bookinfo\.json$/i.test(key)) entry.bookInfoKey = key;
         }
 
         cursor.continue();
@@ -314,38 +318,79 @@
     });
   }
 
-  async function getBookTitle(db, storeName) {
+  // Scans an entire store (no prefix grouping) for the same metadata keys
+  // findBookGroupsInStore looks for. Used by the per-book-database
+  // (Chrome-style "bookId_*") layout, where every key already belongs to one book.
+  function findMetadataKeysInStore(db, storeName) {
     return new Promise(resolve => {
-      const tx = db.transaction(storeName, "readonly");
-      const store = tx.objectStore(storeName);
-      const req = store.openCursor();
+      const meta = { opfKey: null, bookInfoKey: null };
+      let req;
 
-      req.onsuccess = async event => {
+      try {
+        const store = db.transaction(storeName, "readonly").objectStore(storeName);
+        req = store.openKeyCursor ? store.openKeyCursor() : store.openCursor();
+      } catch {
+        resolve(meta);
+        return;
+      }
+
+      req.onsuccess = event => {
         const cursor = event.target.result;
 
         if (!cursor) {
-          resolve(null);
+          resolve(meta);
           return;
         }
 
         const key = String(cursor.key);
-
-        if (/\.opf$/i.test(key)) {
-          resolve(await parseOpfTitle(cursor.value));
-          return;
-        }
+        if (!meta.opfKey && /\.opf$/i.test(key)) meta.opfKey = key;
+        if (!meta.bookInfoKey && /ravn-bookinfo\.json$/i.test(key)) meta.bookInfoKey = key;
 
         cursor.continue();
       };
 
-      req.onerror = () => resolve(null);
+      req.onerror = () => resolve(meta);
     });
   }
 
-  async function getTitleFromRecord(db, storeName, key) {
+  // Some offline books (e.g. audio-only ones) never cache their .opf file,
+  // but Unibok's own ravn-bookinfo.json navigation file is still present.
+  // Its first table-of-contents entry (usually the front cover) carries the
+  // book's title, so use that as a fallback when there is no .opf title.
+  async function resolveTitle(db, storeName, keys) {
+    if (keys.opfKey) {
+      const title = await getTitleFromOpfKey(db, storeName, keys.opfKey);
+      if (title) return title;
+    }
+
+    if (keys.bookInfoKey) {
+      const title = await getTitleFromBookInfoKey(db, storeName, keys.bookInfoKey);
+      if (title) return title;
+    }
+
+    return null;
+  }
+
+  async function getTitleFromOpfKey(db, storeName, key) {
     try {
       const value = await getRecordValue(db, storeName, key);
-      return await parseOpfTitle(value);
+      const text = await decodeValue(value);
+      const xml = new DOMParser().parseFromString(text, "application/xml");
+      return xml.querySelector("title")?.textContent?.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function getTitleFromBookInfoKey(db, storeName, key) {
+    try {
+      const value = await getRecordValue(db, storeName, key);
+      const text = await decodeValue(value);
+      const info = JSON.parse(text);
+      const toc = Array.isArray(info?.toc) ? info.toc : [];
+      const entry = toc.find(item => typeof item?.href === "string" && /cover/i.test(item.href)) || toc[0];
+      const label = entry?.label;
+      return typeof label === "string" && label.trim() ? label.trim() : null;
     } catch {
       return null;
     }
@@ -357,16 +402,6 @@
       req.onsuccess = () => resolve(req.result);
       req.onerror = reject;
     });
-  }
-
-  async function parseOpfTitle(opfValue) {
-    try {
-      const text = await decodeValue(opfValue);
-      const xml = new DOMParser().parseFromString(text, "application/xml");
-      return xml.querySelector("title")?.textContent?.trim() || null;
-    } catch {
-      return null;
-    }
   }
 
   // =======================================================
