@@ -241,6 +241,7 @@
 
           for (const [prefix, group] of groups) {
             const idMatch = prefix.match(/\/book\/([^/]+)\/epub\/([^/]+)\//i);
+            const title = group.opfKey ? await getTitleFromRecord(db, storeName, group.opfKey) : null;
 
             books.push({
               id: idMatch ? `${idMatch[1]}_${idMatch[2]}` : prefix,
@@ -248,7 +249,7 @@
               storeName,
               keyPrefix: prefix,
               count: group.count,
-              title: null
+              title
             });
           }
         }
@@ -297,9 +298,13 @@
         const prefix = extractBookPrefix(cursor.key);
 
         if (prefix) {
-          const entry = groups.get(prefix);
-          if (entry) entry.count++;
-          else groups.set(prefix, { count: 1 });
+          let entry = groups.get(prefix);
+          if (!entry) {
+            entry = { count: 0, opfKey: null };
+            groups.set(prefix, entry);
+          }
+          entry.count++;
+          if (!entry.opfKey && /\.opf$/i.test(String(cursor.key))) entry.opfKey = String(cursor.key);
         }
 
         cursor.continue();
@@ -326,13 +331,7 @@
         const key = String(cursor.key);
 
         if (/\.opf$/i.test(key)) {
-          try {
-            const text = await decodeValue(cursor.value);
-            const xml = new DOMParser().parseFromString(text, "application/xml");
-            resolve(xml.querySelector("title")?.textContent?.trim() || null);
-          } catch {
-            resolve(null);
-          }
+          resolve(await parseOpfTitle(cursor.value));
           return;
         }
 
@@ -341,6 +340,33 @@
 
       req.onerror = () => resolve(null);
     });
+  }
+
+  async function getTitleFromRecord(db, storeName, key) {
+    try {
+      const value = await getRecordValue(db, storeName, key);
+      return await parseOpfTitle(value);
+    } catch {
+      return null;
+    }
+  }
+
+  function getRecordValue(db, storeName, key) {
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(storeName, "readonly").objectStore(storeName).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = reject;
+    });
+  }
+
+  async function parseOpfTitle(opfValue) {
+    try {
+      const text = await decodeValue(opfValue);
+      const xml = new DOMParser().parseFromString(text, "application/xml");
+      return xml.querySelector("title")?.textContent?.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   // =======================================================
