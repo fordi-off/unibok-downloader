@@ -17,7 +17,8 @@ book-exporter/
 └── src/
     ├── book-exporter-router.js
     ├── smartbok-exporter.js
-    └── unibok-downloader.js
+    ├── unibok-downloader.js
+    └── ublock-scriptlets.js
 ```
 
 ## Important setup
@@ -100,6 +101,7 @@ Each JavaScript file has setup variables at the top:
 - `src/book-exporter-router.js`: `githubRawBase`, script paths
 - `src/smartbok-exporter.js`: default pages, max pages, file type, button text
 - `src/unibok-downloader.js`: button text and UI settings
+- `src/ublock-scriptlets.js`: `ROUTER_URL` (only needed if you use uBlock Origin instead of Tampermonkey)
 
 ## File format
 
@@ -114,6 +116,31 @@ You can change it to:
 ```js
 fileType: "txt"
 ```
+
+## Using uBlock Origin instead of Tampermonkey
+
+If you don't want to install Tampermonkey, uBlock Origin can inject the same loader through its own scriptlet injection feature (`##+js(...)` filters). This uses `src/ublock-scriptlets.js`, which loads the router with `fetch()` instead of `GM_xmlhttpRequest` since scriptlets already run in the page's own JavaScript context.
+
+1. Open uBlock Origin's dashboard → **Settings** and enable **I am an advanced user**.
+2. Click the gear icon that appears next to that setting to open **Advanced settings**.
+3. Set `userResourcesLocation` to the raw URL of your `src/ublock-scriptlets.js`, for example:
+
+   ```text
+   https://raw.githubusercontent.com/nikitaradchenko2/book-exporter/main/src/ublock-scriptlets.js
+   ```
+
+   This adds `book-exporter.js` to uBlock Origin's available scriptlets without removing the built-in ones.
+4. Go to the **My filters** tab and add one rule per site you want the loader on:
+
+   ```text
+   les.unibok.no##+js(book-exporter)
+   bok2.smartbok.no##+js(book-exporter)
+   www.smartbok.no##+js(book-exporter)
+   ```
+
+5. Save, then reload the page. uBlock Origin will inject and run the loader the same way the Tampermonkey script does.
+
+If you also edit `githubRawBase` in `src/book-exporter-router.js` per the setup steps above, update the `ROUTER_URL` in `src/ublock-scriptlets.js` to match.
 
 ## Notes
 
